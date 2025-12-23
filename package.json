@@ -1,6 +1,6 @@
 {
-  "name": "kobelco-be",
-  "userName": "Kobelco-BE",
+  "name": "datact-engine-v2---be",
+  "userName": "DatACT-Engine-V2---BE",
   "version": "1.0.0",
   "description": "Backend Service for Kobelco",
   "scripts": {
@@ -9,13 +9,12 @@
     "dev": "nodemon src/index.ts",
     "build-be": "npx tsc",
     "build": "./node_modules/.bin/tsc -p .",
-    "build-fr": "cd ..\\Kobelco-FE && npm run build && npm run generate",
-    "build-fr-linux": "cd ../Kobelco-FE && npm run build && npm run generate",
-    "copy": "cd ..\\Kobelco-FE && XCOPY dist\\** ..\\Kobelco-BE\\public\\ /E/H/C/I/Y",
-    "copy-linux": "cd ../Kobelco-FE/dist && cp -r ./ ../../Kobelco-BE/public/",
+    "build-fr": "cd ..\\DatACT-Engine-V2---FE && npm run build && npm run generate",
+    "build-fr-linux": "cd ../DatACT-Engine-V2---FE && npm run build && npm run generate",
+    "copy": "cd ..\\DatACT-Engine-V2---FE && XCOPY dist\\** ..\\DatACT-Engine-V2---BE\\public\\ /E/H/C/I/Y",
+    "copy-linux": "cd ../DatACT-Engine-V2---FE/dist && cp -r ./ ../../DatACT-Engine-V2---BE/public/",
     "build:live": "nodemon --watch \"src/**\" --ext \"ts\" --exec \"ts-node\" src/index.ts",
-    "build-win": "npm run build-be && npm run build-fr && npm run copy && pkg .",
-    "build-linux": "npm run build-be && npm run build-fr-linux && npm run copy-linux && pkg ."
+    "build-win": "npm run build-be && npm run build-fr && npm run copy && pkg ."
   },
   "author": "Hariharan M",
   "license": "ISC",

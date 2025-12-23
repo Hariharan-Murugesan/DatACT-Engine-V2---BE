@@ -5,8 +5,8 @@ import { CONSTANT_MSG } from "../common/constant_message";
 import ExcelJS from "exceljs";
 import moment from "moment";
 import { ObjectId } from "mongodb";
-import { DCSpecification } from "../models/dcSpecificarion.model";
-import { LTMSpecification } from "../models/ltmSpecificarion.model";
+import { DCSpecification } from "../models/dcSpecification.model";
+import { LTMSpecification } from "../models/ltmSpecification.model";
 
 const machineList = async () => {
   try {
@@ -38,9 +38,22 @@ const machineList = async () => {
         $unwind: { path: "$assetDetails", preserveNullAndEmptyArrays: true }
       },
       {
+        $lookup: {
+          from: "DCSpecification",
+          localField: "Asset_Code",
+          foreignField: "Asset_Code",
+          pipeline: [{ $project: { _id: 0, Engine_Model: 1 } }],
+          as: "model"
+        }
+      },
+      {
+        $unwind: { path: "$model", preserveNullAndEmptyArrays: true }
+      },
+      {
         $project: {
-          _id: 0, Asset_Status: 1, Engine_Number: 1, Asset_Code: 1, Status_1: 1, Status_2: 1, Status_3: 1, Status_4: 1,
-          Torque_1: 1, Torque_2: 1, Torque_3: 1, Torque_4: 1, CT: 1, Angle_1: 1, Angle_2: 1, Angle_3: 1, Angle_4: 1, assetDetails: 1
+          _id: 0, timestamp: 1, Asset_Status: 1, Engine_Number: 1, Asset_Code: 1, Status_1: 1, Status_2: 1, Status_3: 1, Status_4: 1,
+          Torque_1: 1, Torque_2: 1, Torque_3: 1, Torque_4: 1, CT: 1, Angle_1: 1, Angle_2: 1, Angle_3: 1, Angle_4: 1, assetDetails: 1,
+          model: "$model.Engine_Model"
         }
       },
       {
@@ -75,9 +88,21 @@ const machineList = async () => {
         $unwind: { path: "$assetDetails", preserveNullAndEmptyArrays: true }
       },
       {
+        $lookup: {
+          from: "LTMSpecification",
+          localField: "Asset_Code",
+          foreignField: "Asset_Code",
+          pipeline: [{ $project: { _id: 0, Engine_Model: 1 } }],
+          as: "model"
+        }
+      },
+      {
+        $unwind: { path: "$model", preserveNullAndEmptyArrays: true }
+      },
+      {
         $project: {
-          _id: 0, Asset_Status: 1, Engine_Number: 1, Asset_Code: 1, Status: 1, CT: 1, Leak: 1,
-          Pressure: 1, assetDetails: 1
+          _id: 0, timestamp: 1, Asset_Status: 1, Engine_Number: 1, Asset_Code: 1, Status: 1, CT: 1, Leak: 1,
+          Pressure: 1, assetDetails: 1, model: "$model.Engine_Model"
         }
       },
       {
@@ -109,10 +134,18 @@ const machineListDetails = async (reqBody: any) => {
     let ltmMachine: any = [], ltmMachineTotal: any = 0;
     let filterArr: any = [];
     let assetFilterArr: any = {};
+    let specificationFilterArr: any = {};
     const dcMachineSkip: any = (reqBody.dcMachinePage - 1) * reqBody.dcMachineLimit;
     const dcMachineLimit: any = reqBody.dcMachineLimit;
     const ltmMachineSkip: any = (reqBody.ltmMachinePage - 1) * reqBody.ltmMachineLimit;
     const ltmMachineLimit: any = reqBody.ltmMachineLimit;
+    if (reqBody.selectedStatus !== "") {
+      filterArr.push({ Asset_Status: reqBody.selectedStatus === "OK" ? "0" : "1" });
+    }
+    if (reqBody.selectedModel !== "") {
+      specificationFilterArr.Engine_Model = reqBody.selectedModel;
+
+    }
     if (reqBody.searchValue !== "") {
       filterArr.push({ Engine_Number: reqBody.searchValue });
     }
@@ -128,149 +161,183 @@ const machineListDetails = async (reqBody: any) => {
       filterArr.push({ timestamp: { $lte: endDate.toString() } });
     }
     filterArr = filterArr.length ? { $and: filterArr } : {};
-    if (
-      (reqBody.selectedItem !== "" && reqBody.selectedItem != "LTM") ||
-      reqBody.searchValue !== ""
-    ) {
-      dcMachine = await DCMachine.aggregate([
-        { $match: filterArr },
-        {
-          $lookup: {
-            from: "Machine",
-            localField: "Asset_Code",
-            foreignField: "Asset_Code",
-            pipeline: [{ $match: assetFilterArr }],
-            as: "assetDetails",
-          },
+
+    dcMachine = await DCMachine.aggregate([
+      { $match: filterArr },
+      {
+        $lookup: {
+          from: "Machine",
+          localField: "Asset_Code",
+          foreignField: "Asset_Code",
+          pipeline: [{ $match: assetFilterArr }],
+          as: "assetDetails",
         },
-        {
-          $match: { assetDetails: { $ne: [] } },
+      },
+      {
+        $match: { assetDetails: { $ne: [] } },
+      },
+      {
+        $lookup: {
+          from: "DCSpecification",
+          localField: "Asset_Code",
+          foreignField: "Asset_Code",
+          pipeline: [{ $match: specificationFilterArr }],
+          as: "specificationDetails",
         },
-        {
-          $sort: {"Date time": -1 },
+      },
+      {
+        $match: { specificationDetails: { $ne: [] } },
+      },
+      // {
+      //   $sort: { "Date time": -1 },
+      // },
+      {
+        $unwind: { path: "$assetDetails", preserveNullAndEmptyArrays: true },
+      },
+      {
+        $project: {
+          _id: 0,
+          "S No": "$Engine_Number",
+          "Engine Number": "$Engine_Number",
+          "Date": "$Date time",
+          "Time": "$Date time",
+          "Station Name": "$assetDetails.Asset_Name",
+          "Torque 1 (Nm)": { $ifNull: ["$Torque_1", "-"] },
+          "Angle 1 (Deg)": { $ifNull: ["$Angle_1", "-"] },
+          "Status 1": { $ifNull: ["$Status_1", "-"] },
+          "Torque 2 (Nm)": { $ifNull: ["$Torque_2", "-"] },
+          "Angle 2 (Deg)": { $ifNull: ["$Angle_2", "-"] },
+          "Status 2": { $ifNull: ["$Status_2", "-"] },
+          "Torque 3 (Nm)": { $ifNull: ["$Torque_3", "-"] },
+          "Angle 3 (Deg)": { $ifNull: ["$Angle_3", "-"] },
+          "Status 3": { $ifNull: ["$Status_3", "-"] },
+          "Torque 4 (Nm)": { $ifNull: ["$Torque_4", "-"] },
+          "Angle 4 (Deg)": { $ifNull: ["$Angle_4", "-"] },
+          "Status 4": { $ifNull: ["$Status_4", "-"] }
         },
-        {
-          $unwind: { path: "$assetDetails", preserveNullAndEmptyArrays: true },
+      }, {
+        $skip: dcMachineSkip
+      },
+      {
+        $limit: dcMachineLimit
+      }
+    ]);
+    dcMachineTotal = (await DCMachine.aggregate([
+      { $match: filterArr },
+      {
+        $lookup: {
+          from: "Machine",
+          localField: "Asset_Code",
+          foreignField: "Asset_Code",
+          pipeline: [{ $match: assetFilterArr }],
+          as: "assetDetails",
         },
-        {
-          $project: {
-            _id: 0,
-            "S No": "$Engine_Number",
-            "Engine Number": "$Engine_Number",
-            "Date": "$Date time",
-            "Time": "$Date time",
-            "Station Name": "$assetDetails.Asset_Name",
-            "Torque 1 (Nm)": { $ifNull: ["$Torque_1", "-"] },
-            "Angle 1 (Deg)": { $ifNull: ["$Angle_1", "-"] },
-            "Status 1": { $ifNull: ["$Status_1", "-"] },
-            "Torque 2 (Nm)": { $ifNull: ["$Torque_2", "-"] },
-            "Angle 2 (Deg)": { $ifNull: ["$Angle_2", "-"] },
-            "Status 2": { $ifNull: ["$Status_2", "-"] },
-            "Torque 3 (Nm)": { $ifNull: ["$Torque_3", "-"] },
-            "Angle 3 (Deg)": { $ifNull: ["$Angle_3", "-"] },
-            "Status 3": { $ifNull: ["$Status_3", "-"] },
-            "Torque 4 (Nm)": { $ifNull: ["$Torque_4", "-"] },
-            "Angle 4 (Deg)": { $ifNull: ["$Angle_4", "-"] },
-            "Status 4": { $ifNull: ["$Status_4", "-"] }
-          },
-        }, {
-          $skip: dcMachineSkip
+      },
+      {
+        $match: { assetDetails: { $ne: [] } },
+      },
+      {
+        $lookup: {
+          from: "DCSpecification",
+          localField: "Asset_Code",
+          foreignField: "Asset_Code",
+          pipeline: [{ $match: specificationFilterArr }],
+          as: "specificationDetails",
         },
-        {
-          $limit: dcMachineLimit
-        }
-      ]);
-      dcMachineTotal = (await DCMachine.aggregate([
-        { $match: filterArr },
-        {
-          $lookup: {
-            from: "Machine",
-            localField: "Asset_Code",
-            foreignField: "Asset_Code",
-            pipeline: [{ $match: assetFilterArr }],
-            as: "assetDetails",
-          },
+      },
+      {
+        $match: { specificationDetails: { $ne: [] } },
+      },
+      {
+        $project: {
+          _id: 1,
         },
-        {
-          $match: { assetDetails: { $ne: [] } },
+      }
+    ])).length
+
+    ltmMachine = await LTMMachine.aggregate([
+      { $match: filterArr },
+      {
+        $lookup: {
+          from: "Machine",
+          localField: "Asset_Code",
+          foreignField: "Asset_Code",
+          pipeline: [{ $match: assetFilterArr }],
+          as: "assetDetails",
         },
-        {
-          $sort: {"Date time": -1 },
+      },
+      {
+        $match: { assetDetails: { $ne: [] } },
+      },
+      {
+        $lookup: {
+          from: "LTMSpecification",
+          localField: "Asset_Code",
+          foreignField: "Asset_Code",
+          pipeline: [{ $match: specificationFilterArr }],
+          as: "specificationDetails",
         },
-        {
-          $project: {
-            _id: 1,
-          },
-        }
-      ])).length
-    }
-    if (
-      (reqBody.selectedItem !== "" && reqBody.selectedItem != "DC Nutrunners") ||
-      reqBody.searchValue !== ""
-    ) {
-      ltmMachine = await LTMMachine.aggregate([
-        { $match: filterArr },
-        {
-          $lookup: {
-            from: "Machine",
-            localField: "Asset_Code",
-            foreignField: "Asset_Code",
-            pipeline: [{ $match: assetFilterArr }],
-            as: "assetDetails",
-          },
+      },
+      {
+        $match: { specificationDetails: { $ne: [] } },
+      },
+      // {
+      //   $sort: { "Date time": -1 },
+      // },
+      {
+        $unwind: { path: "$assetDetails", preserveNullAndEmptyArrays: true },
+      },
+      {
+        $project: {
+          _id: 0,
+          "S No": "$Engine_Number",
+          "Engine Number": "$Engine_Number",
+          "Date": "$Date time",
+          "Time": "$Date time",
+          "Station Name": "$assetDetails.Asset_Name",
+          "Leak (Pa)": "$Leak",
+          "Pressure (KPa)": "$Pressure",
+          "Status": "$Status"
         },
-        {
-          $match: { assetDetails: { $ne: [] } },
+      }, {
+        $skip: ltmMachineSkip
+      },
+      {
+        $limit: ltmMachineLimit
+      }
+    ]);
+    ltmMachineTotal = (await LTMMachine.aggregate([
+      { $match: filterArr },
+      {
+        $lookup: {
+          from: "Machine",
+          localField: "Asset_Code",
+          foreignField: "Asset_Code",
+          pipeline: [{ $match: assetFilterArr }],
+          as: "assetDetails",
         },
-        {
-          $sort: {"Date time": -1 },
+      },
+      {
+        $match: { assetDetails: { $ne: [] } },
+      },
+      {
+        $lookup: {
+          from: "LTMSpecification",
+          localField: "Asset_Code",
+          foreignField: "Asset_Code",
+          pipeline: [{ $match: specificationFilterArr }],
+          as: "specificationDetails",
         },
-        {
-          $unwind: { path: "$assetDetails", preserveNullAndEmptyArrays: true },
+      },
+      {
+        $match: { specificationDetails: { $ne: [] } },
+      },
+      {
+        $project: {
+          _id: 1,
         },
-        {
-          $project: {
-            _id: 0,
-            "S No": "$Engine_Number",
-            "Engine Number": "$Engine_Number",
-            "Date": "$Date time",
-            "Time": "$Date time",
-            "Station Name": "$assetDetails.Asset_Name",
-            "Leak (Pa)": "$Leak",
-            "Pressure (KPa)": "$Pressure",
-            "Status": "$Status"
-          },
-        }, {
-          $skip: ltmMachineSkip
-        },
-        {
-          $limit: ltmMachineLimit
-        }
-      ]);
-      ltmMachineTotal = (await LTMMachine.aggregate([
-        { $match: filterArr },
-        {
-          $lookup: {
-            from: "Machine",
-            localField: "Asset_Code",
-            foreignField: "Asset_Code",
-            pipeline: [{ $match: assetFilterArr }],
-            as: "assetDetails",
-          },
-        },
-        {
-          $match: { assetDetails: { $ne: [] } },
-        },
-        {
-          $sort: {"Date time": -1 },
-        },
-        {
-          $project: {
-            _id: 1,
-          },
-        },
-      ])).length;
-    }
+      },
+    ])).length;
     for (const [index, dc] of dcMachine.entries()) {
       const dateTime = moment(new Date(dc['Date']))
       dc['S No'] = dcMachineSkip + index + 1;
@@ -326,11 +393,18 @@ const machineDropList = async (reqBody: any) => {
 const reportDownload = async (reqBody: any) => {
   try {
     const datt = ["", "DC Nutrunners", "LTM", "DC Nutrunners & LTM"];
-    let dcMachine: any = [],
-      ltmMachine: any = [],
-      report: any = [];
-    let filterArr: any = [],
-      assetFilterArr: any = {};
+    let dcMachine: any = [], report: any = 0;
+    let ltmMachine: any = [];
+    let filterArr: any = [];
+    let assetFilterArr: any = {};
+    let specificationFilterArr: any = {};
+    if (reqBody.selectedStatus !== "") {
+      filterArr.push({ Asset_Status: reqBody.selectedStatus === "OK" ? "0" : "1" });
+    }
+    if (reqBody.selectedModel !== "") {
+      specificationFilterArr.Engine_Model = reqBody.selectedModel;
+
+    }
     if (reqBody.searchValue !== "") {
       filterArr.push({ Engine_Number: reqBody.searchValue });
     }
@@ -346,93 +420,84 @@ const reportDownload = async (reqBody: any) => {
       filterArr.push({ timestamp: { $lte: endDate.toString() } });
     }
     filterArr = filterArr.length ? { $and: filterArr } : {};
-    if (
-      (reqBody.selectedItem !== "" && reqBody.selectedItem != "LTM") ||
-      reqBody.searchValue !== ""
-    ) {
-      dcMachine = await DCMachine.aggregate([
-        { $match: filterArr },
-        {
-          $sort: { Asset_Code: 1, "Date time": -1 },
+
+    dcMachine = await DCMachine.aggregate([
+      { $match: filterArr },
+      // {
+      //   $sort: { Asset_Code: 1, "Date time": -1 },
+      // },
+      {
+        $lookup: {
+          from: "Machine",
+          localField: "Asset_Code",
+          foreignField: "Asset_Code",
+          pipeline: [{ $match: assetFilterArr }],
+          as: "assetDetails",
         },
-        {
-          $lookup: {
-            from: "Machine",
-            localField: "Asset_Code",
-            foreignField: "Asset_Code",
-            pipeline: [{ $match: assetFilterArr }],
-            as: "assetDetails",
-          },
+      },
+      {
+        $match: { assetDetails: { $ne: [] } },
+      },
+      {
+        $unwind: { path: "$assetDetails", preserveNullAndEmptyArrays: true },
+      },
+      {
+        $project: {
+          _id: 0,
+          "S No": "$Engine_Number",
+          "Engine Number": "$Engine_Number",
+          "Date": "$Date time",
+          "Time": "$Date time",
+          "Station Name": { $ifNull: ["$assetDetails.Asset_Name", "-"] },
+          "Torque 1 (Nm)": { $ifNull: ["$Torque_1", "-"] },
+          "Angle 1 (Deg)": { $ifNull: ["$Angle_1", "-"] },
+          "Status 1": { $ifNull: ["$Status_1", "-"] },
+          "Torque 2 (Nm)": { $ifNull: ["$Torque_2", "-"] },
+          "Angle 2 (Deg)": { $ifNull: ["$Angle_2", "-"] },
+          "Status 2": { $ifNull: ["$Status_2", "-"] },
+          "Torque 3 (Nm)": { $ifNull: ["$Torque_3", "-"] },
+          "Angle 3 (Deg)": { $ifNull: ["$Angle_3", "-"] },
+          "Status 3": { $ifNull: ["$Status_3", "-"] },
+          "Torque 4 (Nm)": { $ifNull: ["$Torque_4", "-"] },
+          "Angle 4 (Deg)": { $ifNull: ["$Angle_4", "-"] },
+          "Status 4": { $ifNull: ["$Status_4", "-"] }
         },
-        {
-          $match: { assetDetails: { $ne: [] } },
+      },
+    ]);
+    ltmMachine = await LTMMachine.aggregate([
+      { $match: filterArr },
+      // {
+      //   $sort: { Asset_Code: 1, "Date time": -1 },
+      // },
+      {
+        $lookup: {
+          from: "Machine",
+          localField: "Asset_Code",
+          foreignField: "Asset_Code",
+          pipeline: [{ $match: assetFilterArr }],
+          as: "assetDetails",
         },
-        {
-          $unwind: { path: "$assetDetails", preserveNullAndEmptyArrays: true },
+      },
+      {
+        $match: { assetDetails: { $ne: [] } },
+      },
+      {
+        $unwind: { path: "$assetDetails", preserveNullAndEmptyArrays: true },
+      },
+      {
+        $project: {
+          _id: 0,
+          "S No": "$Engine_Number",
+          "Engine Number": "$Engine_Number",
+          "Date": "$Date time",
+          "Time": "$Date time",
+          "Station Name": "$assetDetails.Asset_Name",
+          "Leak (Pa)": "$Leak",
+          "Pressure (KPa)": "$Pressure",
+          "Status": "$Status"
         },
-        {
-          $project: {
-            _id: 0,
-            "S No": "$Engine_Number",
-            "Engine Number": "$Engine_Number",
-            "Date": "$Date time",
-            "Time": "$Date time",
-            "Station Name": { $ifNull: ["$assetDetails.Asset_Name", "-"] },
-            "Torque 1 (Nm)": { $ifNull: ["$Torque_1", "-"] },
-            "Angle 1 (Deg)": { $ifNull: ["$Angle_1", "-"] },
-            "Status 1": { $ifNull: ["$Status_1", "-"] },
-            "Torque 2 (Nm)": { $ifNull: ["$Torque_2", "-"] },
-            "Angle 2 (Deg)": { $ifNull: ["$Angle_2", "-"] },
-            "Status 2": { $ifNull: ["$Status_2", "-"] },
-            "Torque 3 (Nm)": { $ifNull: ["$Torque_3", "-"] },
-            "Angle 3 (Deg)": { $ifNull: ["$Angle_3", "-"] },
-            "Status 3": { $ifNull: ["$Status_3", "-"] },
-            "Torque 4 (Nm)": { $ifNull: ["$Torque_4", "-"] },
-            "Angle 4 (Deg)": { $ifNull: ["$Angle_4", "-"] },
-            "Status 4": { $ifNull: ["$Status_4", "-"] }
-          },
-        },
-      ]);
-    }
-    if (
-      (reqBody.selectedItem !== "" && reqBody.selectedItem != "DC Nutrunners") ||
-      reqBody.searchValue !== ""
-    ) {
-      ltmMachine = await LTMMachine.aggregate([
-        { $match: filterArr },
-        {
-          $sort: { Asset_Code: 1, "Date time": -1 },
-        },
-        {
-          $lookup: {
-            from: "Machine",
-            localField: "Asset_Code",
-            foreignField: "Asset_Code",
-            pipeline: [{ $match: assetFilterArr }],
-            as: "assetDetails",
-          },
-        },
-        {
-          $match: { assetDetails: { $ne: [] } },
-        },
-        {
-          $unwind: { path: "$assetDetails", preserveNullAndEmptyArrays: true },
-        },
-        {
-          $project: {
-            _id: 0,
-            "S No": "$Engine_Number",
-            "Engine Number": "$Engine_Number",
-            "Date": "$Date time",
-            "Time": "$Date time",
-            "Station Name": "$assetDetails.Asset_Name",
-            "Leak (Pa)": "$Leak",
-            "Pressure (KPa)": "$Pressure",
-            "Status": "$Status"
-          },
-        },
-      ]);
-    }
+      },
+    ]);
     for (const [index, dc] of dcMachine.entries()) {
       const dateTime = moment(new Date(dc['Date']))
       dc['S No'] = index + 1;
@@ -574,13 +639,32 @@ const specificationListDetails = async (reqBody: any) => {
         },
       },
     ]);
+    const dcSpecificationOp: any = [], ltmSpecificationOp: any = [];
+    for (const dc of dcSpecification) {
+      dcSpecificationOp.push({
+        "Station Name": dc["Station Name"],
+        "Model": dc["Model"],
+        "Torque 1 Limit (Nm)": range(dc["Torque 1 LSL (Nm)"], dc["Torque 1 USL (Nm)"]),
+        "Torque 2 Limit (Nm)": range(dc["Torque 2 LSL (Nm)"], dc["Torque 2 USL (Nm)"]),
+        "Torque 3 Limit (Nm)": range(dc["Torque 3 LSL (Nm)"], dc["Torque 3 USL (Nm)"]),
+        "Torque 4 Limit (Nm)": range(dc["Torque 4 LSL (Nm)"], dc["Torque 4 USL (Nm)"]),
+      });
+    }
+    for (const dc of ltmSpecification) {
+      ltmSpecificationOp.push({
+        "Station Name": dc["Station Name"],
+        "Model": dc["Model"],
+        "Leak Value Limit (Pa)": range(dc["Leak Value LSL (Pa)"], dc["Leak Value USL (KPa)"]),
+        "Pressure Value 1 Limit (Pa)": range(dc["Pressure Value LSL (Pa)"], dc["Pressure Value USL (KPa)"]),
+      });
+    }
     return {
       statusCode: CONSTANT_MSG.STATUS_CODE.SUCCESS,
       status: CONSTANT_MSG.STATUS.SUCCESS,
       message: CONSTANT_MSG.MACHINE.MACHINE_FETCHED,
       data: {
-        dcSpecification: dcSpecification,
-        ltmSpecification: ltmSpecification
+        dcSpecification: dcSpecificationOp,
+        ltmSpecification: ltmSpecificationOp
       },
     };
   } catch (error: any) {
@@ -592,15 +676,18 @@ const specificationListDetails = async (reqBody: any) => {
   }
 };
 
+const range = (lsl: any, usl: any) => {
+  if (lsl === "-" && usl === "-") return "-";
+  return `${lsl} - ${usl}`;
+};
+
 const allMachineList = async (reqBody: any) => {
   try {
     const dcMachine = await DCMachine.find(
       {},
-      { "Date time": 0, timestamp: 0 }
     );
     const ltmMachine = await LTMMachine.find(
       {},
-      { "Date time": 0, timestamp: 0 }
     );
     return {
       statusCode: CONSTANT_MSG.STATUS_CODE.SUCCESS,
